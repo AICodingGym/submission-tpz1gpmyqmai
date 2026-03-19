@@ -899,3 +899,59 @@ def test_pixel_to_world_values_different_int_types():
     for int_coord, np64_coord in zip(int_sliced.pixel_to_world_values(*pixel_arrays),
                                      np64_sliced.pixel_to_world_values(*pixel_arrays)):
         assert all(int_coord == np64_coord)
+
+def test_world_to_pixel_values_with_coupled_dimensions():
+    """
+    Test that world_to_pixel_values correctly handles WCS with coupled dimensions.
+
+    This is a regression test for https://github.com/astropy/astropy/issues/13579
+
+    When a WCS has a PC matrix that couples pixel axes with world axes,
+    slicing one pixel axis should correctly compute the world coordinate
+    for the dropped dimension when calling world_to_pixel_values.
+    """
+    from astropy.wcs.wcsapi import HighLevelWCSWrapper
+
+    # Create a 3D WCS with a PC matrix that couples spatial and spectral dimensions
+    nx = 100
+    ny = 25
+    nz = 2
+    wcs_header = {
+        'WCSAXES': 3,
+        'CRPIX1': (nx + 1) / 2,
+        'CRPIX2': (ny + 1) / 2,
+        'CRPIX3': 1.0,
+        'PC1_1': 0.0,
+        'PC1_2': -1.0,
+        'PC1_3': 0.0,
+        'PC2_1': 1.0,
+        'PC2_2': 0.0,
+        'PC2_3': -1.0,
+        'CDELT1': 5 / 3600,  # Convert arcsec to deg
+        'CDELT2': 5 / 3600,
+        'CDELT3': 0.055,
+        'CUNIT1': 'deg',
+        'CUNIT2': 'deg',
+        'CUNIT3': 'Angstrom',
+        'CTYPE1': 'RA---TAN',
+        'CTYPE2': 'DEC--TAN',
+        'CTYPE3': 'WAVE',
+        'CRVAL1': 0.0,
+        'CRVAL2': 0.0,
+        'CRVAL3': 1.05,
+    }
+    fits_wcs = WCS(header=wcs_header)
+
+    # Test world_to_pixel on the full WCS
+    pt = SkyCoord(ra=0 * u.deg, dec=0 * u.deg)
+    full_result = fits_wcs.world_to_pixel(pt, 1.05 * u.angstrom)
+
+    # Test on sliced WCS
+    ll_sliced_wcs = SlicedLowLevelWCS(fits_wcs, 0)
+    hl_sliced_wcs = HighLevelWCSWrapper(ll_sliced_wcs)
+    sliced_result = hl_sliced_wcs.world_to_pixel(pt)
+
+    # The sliced WCS should return the same spatial pixel coordinates
+    # as the full WCS (the first two components)
+    assert_allclose(sliced_result[0], full_result[0])
+    assert_allclose(sliced_result[1], full_result[1])
