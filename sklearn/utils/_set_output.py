@@ -12,6 +12,7 @@ def _wrap_in_pandas_container(
     *,
     columns,
     index=None,
+    dtypes=None,
 ):
     """Create a Pandas DataFrame.
 
@@ -36,6 +37,12 @@ def _wrap_in_pandas_container(
     index : array-like, default=None
         Index for data.
 
+    dtypes : Series or None, default=None
+        A pandas Series mapping column names to dtypes. If not None, the
+        output DataFrame will have its dtypes set using `astype` for columns
+        present in `dtypes`. This is used to preserve the dtypes of the
+        original input DataFrame.
+
     Returns
     -------
     dataframe : DataFrame
@@ -57,9 +64,26 @@ def _wrap_in_pandas_container(
             data_to_wrap.columns = columns
         if index is not None:
             data_to_wrap.index = index
+        if dtypes is not None:
+            # Only apply dtypes for columns that exist in the output
+            dtypes_to_apply = {
+                col: dtype
+                for col, dtype in dtypes.items()
+                if col in data_to_wrap.columns
+            }
+            if dtypes_to_apply:
+                data_to_wrap = data_to_wrap.astype(dtypes_to_apply)
         return data_to_wrap
 
-    return pd.DataFrame(data_to_wrap, index=index, columns=columns)
+    output = pd.DataFrame(data_to_wrap, index=index, columns=columns)
+    if dtypes is not None:
+        # Only apply dtypes for columns that exist in the output
+        dtypes_to_apply = {
+            col: dtype for col, dtype in dtypes.items() if col in output.columns
+        }
+        if dtypes_to_apply:
+            output = output.astype(dtypes_to_apply)
+    return output
 
 
 def _get_output_config(method, estimator=None):
@@ -131,6 +155,7 @@ def _wrap_data_with_container(method, data_to_wrap, original_input, estimator):
         data_to_wrap=data_to_wrap,
         index=getattr(original_input, "index", None),
         columns=estimator.get_feature_names_out,
+        dtypes=getattr(original_input, "dtypes", None),
     )
 
 
